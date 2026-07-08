@@ -231,11 +231,6 @@ def generate_hash_files(stage_dir: Path) -> None:
     for item in stage_dir.rglob("*"):
         if not item.is_file() or item.name.endswith(".sha256"):
             continue
-        # WebUI assets are integrity-checked by the zip itself; skip per-file
-        # sha256 sidecars to avoid doubling the file count under webroot/.
-        rel = item.relative_to(stage_dir)
-        if rel.parts and rel.parts[0] == "webroot":
-            continue
         generate_hash_for_file(item)
 
 

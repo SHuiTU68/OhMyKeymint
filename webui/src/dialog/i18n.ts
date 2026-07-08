@@ -1,7 +1,7 @@
 import type { MdDialog, MdTextButton } from '@material/web/all'
 import { i18n } from '../i18n'
 import type { Cli } from '../cli'
-import { GITHUB_REPO } from '../constant'
+import { UPSTREAM_REPO } from '../constant'
 import { applyDialogAnimation } from './animation'
 import { renderMarkdown } from './markdown'
 
@@ -44,7 +44,7 @@ export class I18nDialog {
     if (!contentEl) return
 
     try {
-      const link = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/webui/public/locales/GUIDE.md`
+      const link = `https://raw.githubusercontent.com/${UPSTREAM_REPO}/main/webui/public/locales/GUIDE.md`
       let response: Response | null = null
 
       try {

@@ -2,7 +2,7 @@
 <resources>
     <string name="system_default">Default ng Sistema</string>
     <!-- Header -->
-    <string name="header_title">Tricky Addon</string>
+    <string name="header_title">Oh My Keymint</string>
     <!-- Help Menu-->
     <string name="help_help_instructions">Mga Tagubilin</string>
     <string name="help_select_denylist">Piliin mula sa DenyList</string>
@@ -33,8 +33,8 @@
     <!-- Prop Dialog -->
     <string name="boot_hash_title">Boot Hash</string>
     <!-- About -->
-    <string name="about_module_name_line1">Tricky Addon</string>
-    <string name="about_module_name_line2">I-update ang Target List</string>
+    <string name="about_module_name_line1">Oh My Keymint</string>
+    <string name="about_module_name_line2">Tagapanggap ng Keystore</string>
     <string name="about_by">ni</string>
     <string name="about_telegram_channel">Telegram Channel</string>
     <string name="about_disclaimer">Ang WebUI na ito ay hindi bahagi ng Tricky Store, HUWAG i-report sa may-akda ng Tricky Store kung makaranas ka ng anumang isyu.</string>
@@ -65,6 +65,6 @@
     <string name="customkb_remove_title">Підтвердити видалення?</string>
     <!-- Uninstall confirmation -->
     <string name="confirmation_uninstall_title">Kumpirmahin ang Pag-uninstall?</string>
-    <string name="confirmation_uninstall_message">Sigurado ka bang gusto mong i-uninstall ang Tricky Addon</string>
+    <string name="confirmation_uninstall_message">Sigurado ka bang gusto mong i-uninstall ang Oh My Keymint</string>
     <!-- Mode dialog -->
 </resources>

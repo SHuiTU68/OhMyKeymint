@@ -4,7 +4,7 @@ import { i18n } from '../i18n'
 import { File } from '../file'
 import { FileSelector } from '../file_selector/file_selector'
 import { Snackbar } from '../snackbar/snackbar'
-import { LOCAL_STORAGE_PREFIX, GITHUB_REPO } from '../constant'
+import { LOCAL_STORAGE_PREFIX, UPSTREAM_REPO } from '../constant'
 
 interface CustomKeyboxEntry {
   name: string
@@ -16,7 +16,7 @@ const STORAGE_KEY = `${LOCAL_STORAGE_PREFIX}Customkb`
 const CONFIG_METADATA = 'tricky_addon_custom_keybox_config'
 const BLOCKED_PATTERNS = /\b(dd|rm|rmdir|eval|chmod|chown|mv|cp|ln|passwd|shutdown|reboot|poweroff)\b/i
 const DEFAULT_ENTRIES: CustomKeyboxEntry[] = [
-  { name: 'Addon', link: `https://raw.githubusercontent.com/${GITHUB_REPO}/keybox/.extra`, script: 'xxd -r -p | base64 -d' }
+  { name: 'Addon', link: `https://raw.githubusercontent.com/${UPSTREAM_REPO}/keybox/.extra`, script: 'xxd -r -p | base64 -d' }
 ]
 
 export class CustomKeyboxProvider {

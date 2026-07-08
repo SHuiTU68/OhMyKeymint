@@ -94,10 +94,42 @@ chmod 755 "$BINDIR/keymint" "$BINDIR/inject"
 ui_print "- Extracting webroot"
 unzip -o "$ZIPFILE" 'webroot/*' -d "$MODPATH" >&2
 
+# Verify webroot integrity against per-file SHA256 sidecars generated at
+# build time. Filenames under webroot/ are hashed (no spaces), so a glob-free
+# find loop is safe here.
+WEBROOT_DIR="$MODPATH/webroot"
+if [ ! -d "$WEBROOT_DIR" ]; then
+  ui_print "*********************************************************"
+  ui_print "! webroot directory missing in zip!"
+  abort    "*********************************************************"
+fi
+for f in $(find "$WEBROOT_DIR" -type f ! -name '*.sha256'); do
+  rel="${f#$WEBROOT_DIR/}"
+  if [ ! -f "$f.sha256" ]; then
+    abort_verify "webroot/$rel.sha256 missing"
+  fi
+  (echo "$(cat "$f.sha256")  $f" | sha256sum -c -s -) || abort_verify "Failed to verify webroot/$rel"
+done
+ui_print "- Verified webroot" >&1
+find "$WEBROOT_DIR" -name '*.sha256' -delete
+
 ui_print "- Extracting common helpers"
 unzip -o "$ZIPFILE" 'common/*' -d "$MODPATH" >&2
 unzip -o "$ZIPFILE" 'common/.default' -d "$MODPATH" >&2
 chmod 755 "$MODPATH/common/get_extra.sh"
+
+# Write the root-manager marker read by the WebUI (cli.ts #resolveManager).
+# KernelSU/APatch/Magisk export install-time env vars; persist the detected
+# manager so the WebUI can pick the correct install/uninstall/denylist path.
+if [ -n "$KSU" ] || [ -n "$KSU_VER_CODE" ]; then
+  echo "MANAGER=KSU" > "$MODPATH/common/manager.sh"
+elif [ -n "$APATCH" ] || [ -n "$APATCH_VER_CODE" ]; then
+  echo "MANAGER=APATCH" > "$MODPATH/common/manager.sh"
+elif [ -n "$MAGISK_VER_CODE" ]; then
+  echo "MANAGER=MAGISK" > "$MODPATH/common/manager.sh"
+else
+  echo "MANAGER=" > "$MODPATH/common/manager.sh"
+fi
 
 CONFIG_DIR=/data/adb/omk
 mkdir -p "$CONFIG_DIR"

@@ -19,6 +19,12 @@ fi
 # wget = low pref, no ssl.
 # curl, has ssl on android, we use it if found
 download() {
+    # Only http(s) URLs are allowed; reject file://, gopher://, etc. to avoid
+    # local-file-read / SSRF through this script.
+    case "$1" in
+        http://*|https://*) ;;
+        *) return 1 ;;
+    esac
     if command -v curl >/dev/null 2>&1; then
         curl --connect-timeout 10 -Ls "$1"
     else

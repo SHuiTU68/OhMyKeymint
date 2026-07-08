@@ -3,7 +3,7 @@
     <string name="system_default">System Default</string>
     <string name="more_language">Mais</string>
     <!-- Header -->
-    <string name="header_title">Tricky Addon</string>
+    <string name="header_title">Oh My Keymint</string>
     <!-- Help Menu-->
     <string name="help_help_instructions">Instruções</string>
     <string name="help_save_and_update_description">Salvar configuração atual.</string>
@@ -51,8 +51,8 @@
     <string name="prop_handler">Gerenciador de Prop</string>
     <string name="boot_hash_title">Boot Hash</string>
     <!-- About -->
-    <string name="about_module_name_line1">Tricky Addon</string>
-    <string name="about_module_name_line2">Atualizar lista de destino</string>
+    <string name="about_module_name_line1">Oh My Keymint</string>
+    <string name="about_module_name_line2">Falsificador de Keystore</string>
     <string name="about_by">por</string>
     <string name="about_telegram_channel">Canal do Telegram</string>
     <string name="about_canary_update">Atualizado para última versão canária</string>
@@ -106,7 +106,7 @@
     <string name="customkb_reset_message">Redefinir provedores keybox personalizados?</string>
     <!-- Uninstall confirmation -->
     <string name="confirmation_uninstall_title">Confirmar desinstalar?</string>
-    <string name="confirmation_uninstall_message">Tem certeza que deseja desinstalar Tricky Addon</string>
+    <string name="confirmation_uninstall_message">Tem certeza que deseja desinstalar Oh My Keymint</string>
     <!-- Mode dialog -->
     <string name="mode_dialog_title">Modo</string>
     <string name="mode_auto">Auto</string>

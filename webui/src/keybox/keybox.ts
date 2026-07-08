@@ -88,6 +88,8 @@ export class Keybox {
 
     try {
       await File.write(this.keyboxPath, content, cmd)
+      // Keep the keybox readable by the keystore-uid daemon (OMK); mode 0600.
+      await this.#config.applyFileOwnership(this.keyboxPath, '0600')
       return true
     } catch {
       return false

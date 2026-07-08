@@ -4,7 +4,7 @@ import type { MdDialog, MdRadio } from '@material/web/all'
 import { Cli } from '../cli'
 import { Config } from '../config'
 import { i18n } from '../i18n'
-import { GITHUB_REPO, LOCAL_STORAGE_PREFIX } from '../constant'
+import { UPSTREAM_REPO, LOCAL_STORAGE_PREFIX } from '../constant'
 import { applyDialogAnimation } from '../dialog/animation'
 import { PolicyEditor } from './policy'
 import './app_list.scss'
@@ -169,7 +169,7 @@ export class AppList {
 
   async deselectUnnecessary(): Promise<void> {
     try {
-      const link = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/more-exclude.json`
+      const link = `https://raw.githubusercontent.com/${UPSTREAM_REPO}/main/more-exclude.json`
       let response: Response | null = null
 
       try {

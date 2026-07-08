@@ -132,6 +132,7 @@ export class ConfigOhMyKeyMint extends Config {
     injector.scoop = data.target ?? []
     this.#injector = injector
     await File.write(this.INJECTOR_FILE, prettyPrintToml(stringify(this.#injector)))
+    await this.applyFileOwnership(this.INJECTOR_FILE, '0660')
 
     const omkConfig = this.#omkConfig ?? {}
     const trust = (omkConfig.trust ?? {}) as Record<string, unknown>
@@ -150,5 +151,14 @@ export class ConfigOhMyKeyMint extends Config {
     omkConfig.trust = trust
     this.#omkConfig = omkConfig
     await File.write(this.CONFIG_FILE, stringify(this.#omkConfig))
+    await this.applyFileOwnership(this.CONFIG_FILE, '0660')
+  }
+
+  // OMK runtime files live under /data/misc/keystore/omk and are read by the
+  // keymint daemon after it drops to the keystore uid/gid (1017). The WebUI
+  // writes as root, so fix ownership/mode so the daemon can read them
+  // immediately (hot-reload) without waiting for the next daemon restart.
+  override async applyFileOwnership(path: string, mode: string): Promise<void> {
+    await File.setOwnership(path, mode, 1017, 1017)
   }
 }

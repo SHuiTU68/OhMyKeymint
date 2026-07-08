@@ -34,7 +34,7 @@
     <string name="menu_about">เกี่ยวกับ</string>
     <!-- Prop Dialog -->
     <!-- About -->
-    <string name="about_module_name_line2">อัปเดตรายการเป้าหมาย</string>
+    <string name="about_module_name_line2">ผู้ปลอมแปลง Keystore</string>
     <string name="about_by">โดย</string>
     <string name="about_telegram_channel">ช่อง Telegram</string>
     <string name="about_canary_update">อัปเดตเป็นเวอร์ชัน Canary ล่าสุด</string>
@@ -71,7 +71,7 @@
     <string name="customkb_remove_title">ยืนยันการลบ</string>
     <!-- Uninstall confirmation -->
     <string name="confirmation_uninstall_title">ยืนยันการถอนการติดตั้ง?</string>
-    <string name="confirmation_uninstall_message">คุณแน่ใจหรือไม่ว่าต้องการถอนการติดตั้ง Tricky Addon</string>
+    <string name="confirmation_uninstall_message">คุณแน่ใจหรือไม่ว่าต้องการถอนการติดตั้ง Oh My Keymint</string>
     <!-- Mode dialog -->
     <string name="mode_dialog_title">โหมด</string>
     <string name="mode_auto">อัตโนมัติ</string>

@@ -3,7 +3,7 @@
     <string name="system_default">Mặc định hệ thống</string>
     <string name="more_language">Thêm</string>
     <!-- Header -->
-    <string name="header_title">Tricky Addon</string>
+    <string name="header_title">Oh My Keymint</string>
     <!-- Help Menu-->
     <string name="help_help_instructions">Hướng dẫn</string>
     <string name="help_save_and_update_description">Lưu cấu hình hiện tại.</string>
@@ -64,8 +64,8 @@
     <string name="prop_handler">Trình xử lý Thuộc tính</string>
     <string name="boot_hash_title">Boot Hash</string>
     <!-- About -->
-    <string name="about_module_name_line1">Tricky Addon</string>
-    <string name="about_module_name_line2">Cập nhật danh sách mục tiêu</string>
+    <string name="about_module_name_line1">Oh My Keymint</string>
+    <string name="about_module_name_line2">Giả mạo Keystore</string>
     <string name="about_by">Bởi</string>
     <string name="about_telegram_channel">Kênh Telegram</string>
     <string name="about_canary_update">Cập nhật lên phiên bản Canary mới nhất</string>
@@ -122,7 +122,7 @@
     <string name="customkb_reset_message">Đặt lại nhà cung cấp Keybox tùy chỉnh?</string>
     <!-- Uninstall confirmation -->
     <string name="confirmation_uninstall_title">Xác nhận Gỡ cài đặt?</string>
-    <string name="confirmation_uninstall_message">Bạn có chắc muốn Gỡ cài đặt Tricky Addon không?</string>
+    <string name="confirmation_uninstall_message">Bạn có chắc muốn Gỡ cài đặt Oh My Keymint không?</string>
     <!-- Mode dialog -->
     <string name="mode_dialog_title">Chế độ</string>
     <string name="mode_auto">Tự động</string>

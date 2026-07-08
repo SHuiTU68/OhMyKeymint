@@ -48,4 +48,13 @@ FileEOF`)
     const result = await exec(`mkdir -p "${dir}"`)
     if (result.errno !== 0) throw new Error(`File.createDirectory failed (${result.errno}): ${result.stderr}`)
   }
+
+  // Set owner/group/mode on a path. Used after writing OMK runtime files so
+  // the keystore-uid daemon (1017) can read them and so config seeds are not
+  // world-readable. Best-effort: failures are swallowed because a root
+  // WebUI write already leaves the file readable to root, and the daemon
+  // re-fixes ownership on its next startup.
+  static async setOwnership(path: string, mode: string, uid: number, gid: number): Promise<void> {
+    await exec(`chown ${uid}:${gid} "${path}" 2>/dev/null; chmod ${mode} "${path}" 2>/dev/null`).catch(() => {})
+  }
 }

@@ -65,6 +65,6 @@
     <string name="customkb_remove_title">টেমপ্লেট সংরক্ষণ করো</string>
     <!-- Uninstall confirmation -->
     <string name="confirmation_uninstall_title">আনইনস্টল নিশ্চিত করুন?</string>
-    <string name="confirmation_uninstall_message">আপনি কি নিশ্চিত যে আপনি Tricky Addon আনইনস্টল করতে চান</string>
+    <string name="confirmation_uninstall_message">আপনি কি নিশ্চিত যে আপনি Oh My Keymint আনইনস্টল করতে চান</string>
     <!-- Mode dialog -->
 </resources>

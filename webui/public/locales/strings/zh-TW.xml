@@ -3,7 +3,7 @@
     <string name="system_default">系統預設</string>
     <string name="more_language">更多</string>
     <!-- Header -->
-    <string name="header_title">TS 插件</string>
+    <string name="header_title">Oh My Keymint</string>
     <!-- Help Menu-->
     <string name="help_help_instructions">使用指南</string>
     <string name="help_save_and_update_description">儲存目前配置。</string>
@@ -14,8 +14,8 @@
     <string name="help_add_system_app">添加系統應用</string>
     <string name="help_add_system_app_description">添加特定系統應用到應用列表。</string>
     <string name="help_set_keybox">設定密鑰</string>
-    <string name="help_set_keybox_description">替換 TrickyStore 的密鑰為：</string>
-    <string name="help_set_keybox_aosp">**AOSP** - TrickyStore 的預設密鑰。</string>
+    <string name="help_set_keybox_description">替換密鑰為：</string>
+    <string name="help_set_keybox_aosp">**AOSP** - 預設的 AOSP 軟體密鑰。</string>
     <string name="help_set_keybox_unknown">**未知** - 自签名密钥，不符合 Play Intergrity 要求。</string>
     <string name="help_set_keybox_local">**本機** - 從本設備選擇金鑰。</string>
     <string name="help_set_keybox_custom">**自訂** - 透過線上取得自訂密鑰提供者。</string>
@@ -64,13 +64,13 @@
     <string name="prop_handler">Prop 助理</string>
     <string name="boot_hash_title">哈希值</string>
     <!-- About -->
-    <string name="about_module_name_line1">TS 插件</string>
-    <string name="about_module_name_line2">更新目標列表</string>
+    <string name="about_module_name_line1">Oh My Keymint</string>
+    <string name="about_module_name_line2">Keystore 偽裝</string>
     <string name="about_by">作者：</string>
     <string name="about_telegram_channel">Telegram 頻道</string>
     <string name="about_canary_update">下載最新測試版</string>
     <string name="about_translation_update">更新翻譯包</string>
-    <string name="about_disclaimer">此 WebUI 並非 Tricky Store 的一部分，如遇任何問題請勿向 Tricky Store 作者反饋。</string>
+    <string name="about_disclaimer">Oh My Keymint 是自訂 keystore 實作。如遇問題請向 Oh My Keymint 儲存庫反饋。</string>
     <string name="about_acknowledgment">特別鳴謝</string>
     <!-- Prompt -->
     <string name="prompt_aosp_key_set">成功設置 AOSP 密鑰</string>
@@ -122,7 +122,7 @@
     <string name="customkb_reset_message">重置自訂密鑰入口？</string>
     <!-- Uninstall confirmation -->
     <string name="confirmation_uninstall_title">確認卸載？</string>
-    <string name="confirmation_uninstall_message">您確定要卸載 TS 插件嗎</string>
+    <string name="confirmation_uninstall_message">您確定要卸載 Oh My Keymint 嗎</string>
     <!-- Mode dialog -->
     <string name="mode_dialog_title">模式</string>
     <string name="mode_auto">自動</string>

@@ -294,6 +294,10 @@ export class Config {
     return this.appMode
   }
 
+  // Hook for configs whose runtime files must keep a specific owner/mode.
+  // Default is a no-op; OMK overrides it to chown keystore:keystore.
+  async applyFileOwnership(_path: string, _mode: string): Promise<void> {}
+
   static support(versionCode: number): boolean {
     return versionCode >= MIN_SUPPORTED_VERSION
   }

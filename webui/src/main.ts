@@ -3,8 +3,7 @@ import type { MdOutlinedTextField, MdDialog, MdFab, MdIconButton } from '@materi
 import { i18n } from './i18n'
 import { MainMenu } from './main_menu/main_menu'
 import { Cli } from './cli'
-import { Config } from './config'
-import { ConfigLegacy } from './config_legacy'
+import type { Config } from './config'
 import { ConfigOhMyKeyMint } from './config_ohmykeymint'
 import { AppList } from './app_list/app_list'
 import { Snackbar } from './snackbar/snackbar'
@@ -13,10 +12,8 @@ import { History } from './history'
 import { Keybox } from './keybox/keybox'
 import { KeyboxRepo } from './keybox/repo/repo'
 import { DialogController } from './dialog/dialog'
-import { UpdateManager } from './update'
 import { SearchBar } from './search_bar/search_bar'
 import { Keybind } from './keybind'
-import { OMK_MOD_ID } from './constant'
 import './style.scss'
 
 await i18n.init()
@@ -26,28 +23,10 @@ const fileSelector = new FileSelector()
 const cli = new Cli()
 const history = new History()
 const keybind = new Keybind()
-const updateManager = new UpdateManager(cli)
 
-let config: Config
-try {
-  const tsInfo = await cli.getTrickyStoreInfo()
-  config = createConfig(tsInfo)
-} catch {
-  config = new Config()
-}
-
-function createConfig(tsInfo: Record<string, string>): Config {
-  const modId = tsInfo.id
-  const versionCode = parseInt(tsInfo.versionCode, 10)
-  switch (true) {
-    case modId === OMK_MOD_ID:
-      return new ConfigOhMyKeyMint()    // Oh My Keymint
-    case Config.support(versionCode):
-      return new Config()               // config.ini
-    default:
-      return new ConfigLegacy()         // target.txt + security_patch.txt
-  }
-}
+// This WebUI is bundled into Oh My Keymint, so always manage the OMK config
+// (never fall back to the Tricky-Store config/target.txt paths).
+const config: Config = new ConfigOhMyKeyMint()
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = /* html */ `
   <section class="header">
@@ -166,9 +145,9 @@ if (!Keybox.isKeygenAvailable() && !import.meta.env.DEV) {
 }
 
 // Self-update is disabled for the Oh My Keymint bundle: the upstream
-// UpdateManager checks the Tricky-Addon update.json and would overwrite or
-// delete this module's module.prop via showModule(). OMK is updated through
-// its own module.prop updateJson by the root manager instead.
+// UpdateManager would fetch Tricky-Addon payloads and overwrite this module's
+// module.prop / locales or flash an unrelated module zip. OMK is updated
+// through its own module.prop updateJson by the root manager instead.
 document.querySelector<HTMLElement>('.update')?.classList.add('hide')
 
 // Keyboard shortcut events
@@ -179,7 +158,7 @@ keybind.on('keybind-save', () => saveTarget())
 keybind.on('keybind-esc', () => history.back())
 
 // Dialog
-const dialogController = new DialogController(cli, config, updateManager, snackbar, appList)
+const dialogController = new DialogController(cli, config, snackbar, appList)
 const dialogContent = document.querySelector<HTMLElement>('.dialog-content')!
 fileSelector.appendTo(dialogContent)
 keybox.appendTo(dialogContent)

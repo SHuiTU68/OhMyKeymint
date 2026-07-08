@@ -57,8 +57,8 @@ export class Cli {
     let raw = ''
     for (const id of ids) {
       try {
-        raw = await File.read('/data/adb/modules/' + id + '/module.prop')
-        const disabled = File.exist('/data/adb/modules' + id + '/disable')
+        raw = await File.read(`/data/adb/modules/${id}/module.prop`)
+        const disabled = await File.exist(`/data/adb/modules/${id}/disable`)
         if (!disabled) break
       } catch {}
     }
