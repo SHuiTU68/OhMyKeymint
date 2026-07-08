@@ -91,6 +91,14 @@ fi
 [ -f "$BINDIR/inject" ] || abort "! Missing $BINDIR/inject"
 chmod 755 "$BINDIR/keymint" "$BINDIR/inject"
 
+ui_print "- Extracting webroot"
+unzip -o "$ZIPFILE" 'webroot/*' -d "$MODPATH" >&2
+
+ui_print "- Extracting common helpers"
+unzip -o "$ZIPFILE" 'common/*' -d "$MODPATH" >&2
+unzip -o "$ZIPFILE" 'common/.default' -d "$MODPATH" >&2
+chmod 755 "$MODPATH/common/get_extra.sh"
+
 CONFIG_DIR=/data/adb/omk
 mkdir -p "$CONFIG_DIR"
 rm -f "$CONFIG_DIR/restart.keymint" "$CONFIG_DIR/restart.injector" "$CONFIG_DIR/restart.all"

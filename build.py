@@ -73,9 +73,9 @@ MODULE_TEXT_FILES = (
 )
 
 
-def run(cmd: list[str], *, env: dict[str, str] | None = None) -> None:
+def run(cmd: list[str], *, env: dict[str, str] | None = None, cwd: Path | None = None) -> None:
     print("+", " ".join(cmd))
-    result = subprocess.run(cmd, cwd=REPO_ROOT, env=env)
+    result = subprocess.run(cmd, cwd=cwd or REPO_ROOT, env=env)
     if result.returncode != 0:
         raise RuntimeError(f"command failed: {' '.join(cmd)}")
 
@@ -229,8 +229,14 @@ def generate_hash_for_file(file_path: Path) -> None:
 def generate_hash_files(stage_dir: Path) -> None:
     print(f"Generating SHA256 hash files under {stage_dir}...")
     for item in stage_dir.rglob("*"):
-        if item.is_file() and not item.name.endswith(".sha256"):
-            generate_hash_for_file(item)
+        if not item.is_file() or item.name.endswith(".sha256"):
+            continue
+        # WebUI assets are integrity-checked by the zip itself; skip per-file
+        # sha256 sidecars to avoid doubling the file count under webroot/.
+        rel = item.relative_to(stage_dir)
+        if rel.parts and rel.parts[0] == "webroot":
+            continue
+        generate_hash_for_file(item)
 
 
 def delete_old_zips(release: bool, selected_abis: list[str]) -> None:
@@ -269,6 +275,18 @@ def create_zip_package(
                 zipf.write(file_path, arcname)
 
     return zip_path
+
+
+def build_webui() -> None:
+    webui_dir = REPO_ROOT / "webui"
+    if not webui_dir.is_dir():
+        raise FileNotFoundError("webui source directory not found")
+    print("Building WebUI (pnpm)...")
+    run(["pnpm", "install", "--frozen-lockfile"], cwd=webui_dir)
+    run(["pnpm", "build"], cwd=webui_dir)
+    webroot = REPO_ROOT / "template" / "webroot"
+    if not webroot.is_dir():
+        raise FileNotFoundError("WebUI build did not produce template/webroot/")
 
 
 def build_package_for_abi(
@@ -356,6 +374,7 @@ def main() -> None:
     print(f"Build mode: {'Release' if args.release else 'Debug'}")
     print(f"Target ABIs: {', '.join(selected_abis)}")
 
+    build_webui()
     delete_old_zips(args.release, selected_abis)
     built_packages = []
     for abi in selected_abis:

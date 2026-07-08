@@ -46,7 +46,11 @@ shared_secret_nonce = "884ae5e90744bc1c590c4a9959a9c11d1989a9f2b7cc31a50a31c9fc4
 # auth_token_hmac_key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 [trust]
-os_version = 17
+# Accepted values:
+# - <integer>: pin an exact Android major version (e.g. 17)
+# - "auto": read the device's Android major version from build properties
+#           (ro.build.version.release_or_codename / ro.build.version.release)
+os_version = "auto"
 # Accepted values:
 # - "auto": read and preserve the original build.prop patch level
 # - "latest": use the 5th day of the current month

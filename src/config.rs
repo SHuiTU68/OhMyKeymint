@@ -585,8 +585,34 @@ pub struct ResolvedTrust {
     pub device_locked: bool,
 }
 
+fn deserialize_os_version<'de, D>(deserializer: D) -> Result<i32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = toml::Value::deserialize(deserializer)?;
+    match value {
+        toml::Value::Integer(n) => Ok(i32::try_from(n).unwrap_or(16)),
+        toml::Value::String(s) => {
+            let trimmed = s.trim();
+            if trimmed.eq_ignore_ascii_case("auto") {
+                Ok(kmr_common::android_version::android_major_version().unwrap_or(16))
+            } else {
+                trimmed.parse::<i32>().map_err(|_| {
+                    serde::de::Error::custom(format!(
+                        "os_version must be an integer or \"auto\", got {s:?}"
+                    ))
+                })
+            }
+        }
+        other => Err(serde::de::Error::custom(format!(
+            "os_version must be an integer or \"auto\", got {other}"
+        ))),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RawTrustConfig {
+    #[serde(deserialize_with = "deserialize_os_version")]
     pub os_version: i32,
     pub security_patch: String,
     #[serde(default)]
@@ -843,6 +869,46 @@ force_skip_system_biometric_hat_verification = true"#,
         .unwrap();
         assert!(parsed.force_skip_system_biometric_hat_verification);
         assert!(!MainConfig::default().force_skip_system_biometric_hat_verification);
+    }
+
+    #[test]
+    fn config_file_parses_os_version_auto_string() {
+        let config = parse_config_file(
+            r#"
+[main]
+backend = "injector"
+
+[crypto]
+root_kek_seed = "0000000000000000000000000000000000000000000000000000000000000000"
+kak_seed = "1111111111111111111111111111111111111111111111111111111111111111"
+shared_secret_seed = "2222222222222222222222222222222222222222222222222222222222222222"
+shared_secret_nonce = "3333333333333333333333333333333333333333333333333333333333333333"
+
+[trust]
+os_version = "auto"
+security_patch = "auto"
+vb_key = "auto"
+vb_hash = "auto"
+verified_boot_state = true
+device_locked = true
+
+[device]
+brand = "Google"
+device = "caiman"
+product = "caiman"
+manufacturer = "Google"
+model = "Pixel 9"
+serial = "serial"
+overrideTelephonyProperties = false
+meid = ""
+imei = ""
+imei2 = ""
+"#,
+        )
+        .unwrap();
+
+        let expected = kmr_common::android_version::android_major_version().unwrap_or(16);
+        assert_eq!(config.trust.os_version, expected);
     }
 
     #[test]

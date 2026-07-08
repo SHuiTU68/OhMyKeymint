@@ -1,0 +1,207 @@
+import '@material/web/all'
+import type { MdOutlinedTextField, MdDialog, MdFab, MdIconButton } from '@material/web/all'
+import { i18n } from './i18n'
+import { MainMenu } from './main_menu/main_menu'
+import { Cli } from './cli'
+import { Config } from './config'
+import { ConfigLegacy } from './config_legacy'
+import { ConfigOhMyKeyMint } from './config_ohmykeymint'
+import { AppList } from './app_list/app_list'
+import { Snackbar } from './snackbar/snackbar'
+import { FileSelector } from './file_selector/file_selector'
+import { History } from './history'
+import { Keybox } from './keybox/keybox'
+import { KeyboxRepo } from './keybox/repo/repo'
+import { DialogController } from './dialog/dialog'
+import { UpdateManager } from './update'
+import { SearchBar } from './search_bar/search_bar'
+import { Keybind } from './keybind'
+import { OMK_MOD_ID } from './constant'
+import './style.scss'
+
+await i18n.init()
+
+const snackbar = new Snackbar()
+const fileSelector = new FileSelector()
+const cli = new Cli()
+const history = new History()
+const keybind = new Keybind()
+const updateManager = new UpdateManager(cli)
+
+let config: Config
+try {
+  const tsInfo = await cli.getTrickyStoreInfo()
+  config = createConfig(tsInfo)
+} catch {
+  config = new Config()
+}
+
+function createConfig(tsInfo: Record<string, string>): Config {
+  const modId = tsInfo.id
+  const versionCode = parseInt(tsInfo.versionCode, 10)
+  switch (true) {
+    case modId === OMK_MOD_ID:
+      return new ConfigOhMyKeyMint()    // Oh My Keymint
+    case Config.support(versionCode):
+      return new Config()               // config.ini
+    default:
+      return new ConfigLegacy()         // target.txt + security_patch.txt
+  }
+}
+
+document.querySelector<HTMLDivElement>('#app')!.innerHTML = /* html */ `
+  <section class="header">
+    <div id="title" class="search-hide">${i18n.t('header_title')}</div>
+    <div class="spacer"></div>
+    <md-icon-button id="search-button" class="search-hide"><md-icon>search</md-icon></md-icon-button>
+    <md-outlined-text-field class="search-bar hide">
+      <md-icon-button slot="trailing-icon" id="search-close"><md-icon>close</md-icon></md-icon-button>
+    </md-outlined-text-field>
+    <div class="main-menu">
+      <md-icon-button id="menu-button">
+        <md-icon>more_vert</md-icon>
+      </md-icon-button>
+    </div>
+  </section>
+
+  <section class="body-content">
+    <div class="update hide">
+      <md-icon>cloud_download</md-icon>
+      <div class="update-text">
+        <span>${i18n.t('update_update_available')}</span>
+        <em>${i18n.t('update_redirect_to_release')}</em>
+      </div>
+      <md-ripple></md-ripple>
+    </div>
+    <div class="app-list">
+      <div class="loading"><md-circular-progress indeterminate></md-circular-progress></div>
+    </div>
+    <div class="uninstall">
+      <md-filled-button id="uninstall">
+        <md-icon slot="icon">delete</md-icon>
+        ${i18n.t('functional_button_uninstall_webui')}
+      </md-filled-button>
+    </div>
+    <div class="bottom-safe-inset"></div>
+  </section>
+
+  <section class="floating-content fab-hide">
+    ${snackbar.html()}
+    <div class="fab-container">
+      <md-fab variant="primary" class="fab fab-hide" id="save" label="${i18n.t('functional_button_save')}">
+        <md-icon slot="icon">edit_note</md-icon>
+      </md-fab>
+    </div>
+  </section>
+
+  <section class="dialog-content"></section>
+`
+
+// App List
+const appList = new AppList(config, cli)
+await config.read()
+await appList.fetch()
+appList.syncSystemAppsWithConfig()
+const appListContainer = document.querySelector<HTMLElement>('.app-list')!
+appList.renderAppList(appListContainer)
+float(false)
+
+// Search bar
+const searchBar = new SearchBar(history)
+const searchBarEl = document.querySelector<MdOutlinedTextField>('.search-bar')!
+const searchHide = document.querySelectorAll<HTMLElement>('.search-hide')
+const searchButton = document.getElementById('search-button') as MdIconButton
+searchBar.init(searchBarEl, searchHide, appListContainer)
+searchButton.onclick = () => searchBar.show()
+
+// Save App List
+const saveFab = document.getElementById('save') as MdFab
+saveFab.onclick = () => saveTarget()
+async function saveTarget(): Promise<void> {
+  try {
+    await appList.save()
+    await appList.refresh()
+    snackbar.show(i18n.t('prompt_saved_target'))
+  } catch (e) {
+    snackbar.show(i18n.t('prompt_save_error'), false)
+  }
+}
+
+/**
+ * Toggle visibility of floating content
+ * @param hide True to hide, false to show
+ */
+function float(hide: boolean): void {
+  document.querySelectorAll('.floating-content, .fab').forEach(el => el.classList.toggle('fab-hide', hide))
+}
+
+// Main Menu events
+const mainMenu = new MainMenu()
+const keybox = new Keybox(cli, config, fileSelector, snackbar)
+const keyboxRepo = new KeyboxRepo(keybox, history, snackbar)
+const mainMenuContainer = document.querySelector<HTMLElement>('.main-menu')!
+mainMenu.appendTo(mainMenuContainer)
+mainMenu.on('menu-open', () => appList.menuOpen = true)
+mainMenu.on('menu-close', () => appList.menuOpen = false)
+mainMenu.on('menu-refresh', async () => await appList.refresh())
+mainMenu.on('menu-select-all', () => appList.selectAll())
+mainMenu.on('menu-deselect-all', () => appList.deselectAll())
+mainMenu.on('menu-keybox-aosp', async () => await keybox.setAospKey())
+mainMenu.on('menu-keybox-unknown', async () => await keybox.setUnknownKey())
+mainMenu.on('menu-keybox-local', async () => await keybox.setLocalKey())
+mainMenu.on('menu-keybox-repo', () => keyboxRepo.show())
+mainMenu.on('menu-add-system-app', () => dialogController.showSystemApp())
+mainMenu.on('menu-select-denylist', async () => appList.fetchDenyList())
+mainMenu.on('menu-deselect-unnecessary', async () => appList.deselectUnnecessary())
+mainMenu.on('menu-prop-setting', () => dialogController.showProp())
+mainMenu.on('menu-default-policy', () => dialogController.showDefaultPolicy())
+mainMenu.on('menu-help', () => dialogController.showHelp())
+mainMenu.on('menu-about', () => dialogController.showAbout())
+mainMenu.on('menu-i18n-guide', () => dialogController.showI18nDialog())
+if ((await cli.getManager()) !== 'MAGISK' && !import.meta.env.DEV) {
+  mainMenu.hideItem('select-denylist') // Hide 'select from denylist'
+}
+if (!Keybox.isKeygenAvailable() && !import.meta.env.DEV) {
+  mainMenu.hideItem('keybox-unknown') // Hide 'Unknown keybox'
+}
+
+// Self-update is disabled for the Oh My Keymint bundle: the upstream
+// UpdateManager checks the Tricky-Addon update.json and would overwrite or
+// delete this module's module.prop via showModule(). OMK is updated through
+// its own module.prop updateJson by the root manager instead.
+document.querySelector<HTMLElement>('.update')?.classList.add('hide')
+
+// Keyboard shortcut events
+keybind.on('keybind-select-all', () => appList.selectAll())
+keybind.on('keybind-deselect-all', () => appList.deselectAll())
+keybind.on('keybind-search', () => searchBar.show())
+keybind.on('keybind-save', () => saveTarget())
+keybind.on('keybind-esc', () => history.back())
+
+// Dialog
+const dialogController = new DialogController(cli, config, updateManager, snackbar, appList)
+const dialogContent = document.querySelector<HTMLElement>('.dialog-content')!
+fileSelector.appendTo(dialogContent)
+keybox.appendTo(dialogContent)
+keyboxRepo.appendTo(dialogContent)
+keybox.custom.renderEntries()
+dialogController.appendAll(dialogContent)
+dialogContent.querySelectorAll<MdDialog>('md-dialog').forEach((dialog, i) => {
+  const id = dialog.id || `md-dialog-${i}`
+  dialog.addEventListener('open', () => history.push(id, () => dialog.close()))
+  dialog.addEventListener('closed', () => history.consume(id))
+})
+
+// The WebUI is bundled into Oh My Keymint, so "uninstall webui" would call
+// uninstallModule('oh_my_keymint') and remove the whole OMK module. Hide it;
+// users uninstall OMK through the root manager instead.
+document.querySelector<HTMLElement>('.uninstall')?.style.setProperty('display', 'none')
+
+// Scroll event
+let lastScrollY = window.scrollY
+window.onscroll = () => {
+  document.querySelectorAll('md-menu').forEach(menu => menu.close())
+  float(window.scrollY > lastScrollY && window.scrollY > 48)
+  document.querySelector('.header')?.classList.toggle('scroll', window.scrollY > 10)
+  lastScrollY = window.scrollY
+}
