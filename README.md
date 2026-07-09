@@ -105,6 +105,8 @@ scoop = [
   "com.google.android.gms",
   "com.android.vending",
   "com.eltavine.duckdetector",
+  "net.one97.paytm",
+  "my.com.tngdigital.ewallet",
 ]
 
 [main]
