@@ -30,6 +30,12 @@ use crate::{
 const SECURITY_PATCH_PROP: &str = "ro.build.version.security_patch";
 const VBMETA_KEY_PROP: &str = "ro.boot.vbmeta.public_key_digest";
 const VBMETA_HASH_PROP: &str = "ro.boot.vbmeta.digest";
+const FLASH_LOCKED_PROP: &str = "ro.boot.flash.locked";
+const VERIFIED_BOOT_STATE_PROP: &str = "ro.boot.verifiedbootstate";
+const VENDOR_VERIFIED_BOOT_STATE_PROP: &str = "vendor.boot.verifiedbootstate";
+const VBMETA_DEVICE_STATE_PROP: &str = "ro.boot.vbmeta.device_state";
+const VENDOR_VBMETA_DEVICE_STATE_PROP: &str = "vendor.boot.vbmeta.device_state";
+const OEM_UNLOCK_ALLOWED_PROP: &str = "sys.oem_unlock_allowed";
 const ORIGINAL_HASH_TIMEOUT: Duration = Duration::from_secs(5);
 const AVB_HEADER_SIZE: usize = 256;
 const BUILD_PROP_PATHS: &[&str] = &[
@@ -65,7 +71,12 @@ pub fn bootstrap_vbmeta(config_file: &mut ConfigFile) -> Result<ResolvedTrust> {
     );
     let vb_hash = resolve_vb_hash(&config_file.trust.vb_hash);
 
-    sync_sysprops_if_needed(&vb_key, &vb_hash)?;
+    sync_sysprops_if_needed(
+        &vb_key,
+        &vb_hash,
+        config_file.trust.verified_boot_state,
+        config_file.trust.device_locked,
+    )?;
     update_trust_record(
         &mut config_file.trust_record,
         &build_fingerprint,
@@ -277,7 +288,12 @@ fn update_trust_record(
     }
 }
 
-fn sync_sysprops_if_needed(vb_key: &ResolvedField, vb_hash: &ResolvedField) -> Result<()> {
+fn sync_sysprops_if_needed(
+    vb_key: &ResolvedField,
+    vb_hash: &ResolvedField,
+    verified_boot_state: bool,
+    device_locked: bool,
+) -> Result<()> {
     if vb_key.source.needs_sysprop_write() {
         let value = hex::encode(vb_key.value);
         resetprop::direct_write_and_verify_property(VBMETA_KEY_PROP, &value)?;
@@ -288,6 +304,29 @@ fn sync_sysprops_if_needed(vb_key: &ResolvedField, vb_hash: &ResolvedField) -> R
         resetprop::direct_write_and_verify_property(VBMETA_HASH_PROP, &value)?;
     }
 
+    let flash_locked = if device_locked { "1" } else { "0" };
+    let oem_unlock_allowed = if device_locked { "0" } else { "1" };
+    let verified_boot_state = if verified_boot_state {
+        "green"
+    } else {
+        "orange"
+    };
+    let vbmeta_device_state = if device_locked { "locked" } else { "unlocked" };
+
+    sync_string_sysprop(FLASH_LOCKED_PROP, flash_locked)?;
+    sync_string_sysprop(OEM_UNLOCK_ALLOWED_PROP, oem_unlock_allowed)?;
+    sync_string_sysprop(VERIFIED_BOOT_STATE_PROP, verified_boot_state)?;
+    sync_string_sysprop(VENDOR_VERIFIED_BOOT_STATE_PROP, verified_boot_state)?;
+    sync_string_sysprop(VBMETA_DEVICE_STATE_PROP, vbmeta_device_state)?;
+    sync_string_sysprop(VENDOR_VBMETA_DEVICE_STATE_PROP, vbmeta_device_state)?;
+
+    Ok(())
+}
+
+fn sync_string_sysprop(property: &str, value: &str) -> Result<()> {
+    if resetprop::read_string_property(property).as_deref() != Some(value) {
+        resetprop::direct_write_and_verify_property(property, value)?;
+    }
     Ok(())
 }
 
