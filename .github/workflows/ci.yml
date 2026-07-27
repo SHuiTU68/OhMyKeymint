@@ -33,7 +33,9 @@ jobs:
       if: steps.boringssl-cache.outputs.cache-hit != 'true'
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        toolchain: nightly
+        # Pinned: nightly-2026-07-25 (008fa22ce) ICEs in tokio rt-multi-thread
+        # codegen. 2026-07-20 (87e5904f5) is the last known-good nightly.
+        toolchain: nightly-2026-07-20
         target: aarch64-linux-android
 
     - name: Install Android SDK
@@ -98,7 +100,9 @@ jobs:
     - name: Install Rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        toolchain: nightly
+        # Pinned: nightly-2026-07-25 (008fa22ce) ICEs in tokio rt-multi-thread
+        # codegen. 2026-07-20 (87e5904f5) is the last known-good nightly.
+        toolchain: nightly-2026-07-20
         target: aarch64-linux-android
 
     - name: Cache Cargo registry and build artifacts
