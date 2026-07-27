@@ -22,6 +22,8 @@ except ModuleNotFoundError:
 
 REPO_ROOT = Path(__file__).resolve().parent
 TARGET_ROOT = REPO_ROOT / "target"
+WEBUI_DIR = REPO_ROOT / "webui"
+WEBROOT_DIR = REPO_ROOT / "template" / "webroot"
 DEFAULT_PLATFORM = 24
 
 ABI_TO_TARGET = {
@@ -73,11 +75,40 @@ MODULE_TEXT_FILES = (
 )
 
 
-def run(cmd: list[str], *, env: dict[str, str] | None = None) -> None:
+def run(cmd: list[str], *, env: dict[str, str] | None = None, cwd_override: Path | None = None) -> None:
     print("+", " ".join(cmd))
-    result = subprocess.run(cmd, cwd=REPO_ROOT, env=env)
+    result = subprocess.run(cmd, cwd=cwd_override or REPO_ROOT, env=env)
     if result.returncode != 0:
         raise RuntimeError(f"command failed: {' '.join(cmd)}")
+
+
+def build_webui() -> None:
+    """Build the WebUI front-end into template/webroot.
+
+    The output is ABI-independent, so it only needs to run once per build
+    invocation. ``pnpm`` is preferred; ``npm`` is used as a fallback so the
+    script also works in CI environments without pnpm installed.
+    """
+    if not WEBUI_DIR.exists():
+        print(f"WebUI directory not found at {WEBUI_DIR}, skipping webui build")
+        return
+
+    print("Building WebUI...")
+    pkg_mgr = "pnpm"
+    try:
+        subprocess.run([pkg_mgr, "--version"], capture_output=True, check=True)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pkg_mgr = "npm"
+
+    run([pkg_mgr, "install", "--frozen-lockfile"] if pkg_mgr == "pnpm"
+        else [pkg_mgr, "ci"], cwd_override=WEBUI_DIR)
+    run([pkg_mgr, "run", "build"], cwd_override=WEBUI_DIR)
+
+    if not WEBROOT_DIR.exists():
+        raise FileNotFoundError(
+            f"WebUI build did not produce output at {WEBROOT_DIR}"
+        )
+    print(f"WebUI built into {WEBROOT_DIR}")
 
 
 def get_version_from_cargo_toml() -> str:
@@ -345,6 +376,11 @@ def main() -> None:
             f"for the Android API/linker (default: {DEFAULT_PLATFORM})"
         ),
     )
+    parser.add_argument(
+        "--skip-webui",
+        action="store_true",
+        help="Skip building the WebUI (assumes template/webroot already exists)",
+    )
     args = parser.parse_args()
 
     version = get_version_from_cargo_toml()
@@ -355,6 +391,9 @@ def main() -> None:
     print(f"Building OhMyKeymint version {version} (commit {git_count}, hash {git_hash})")
     print(f"Build mode: {'Release' if args.release else 'Debug'}")
     print(f"Target ABIs: {', '.join(selected_abis)}")
+
+    if not args.skip_webui:
+        build_webui()
 
     delete_old_zips(args.release, selected_abis)
     built_packages = []

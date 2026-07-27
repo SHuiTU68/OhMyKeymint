@@ -72,6 +72,13 @@ extract "$ZIPFILE" 'keybox.xml'      "$MODPATH"
 chmod 755 "$MODPATH/daemon" "$MODPATH/daemon-injector" \
   "$MODPATH/post-fs-data.sh" "$MODPATH/service.sh"
 
+# WebUI (webroot) is extracted wholesale; per-file hash verification is not
+# practical for a directory of static assets.
+if unzip -l "$ZIPFILE" 'webroot/*' 2>/dev/null | grep -q 'webroot/'; then
+  ui_print "- Extracting WebUI"
+  unzip -o "$ZIPFILE" 'webroot/*' -d "$MODPATH" >&2
+fi
+
 
 if [ "$ARCH" = "x64" ] || [ "$ARCH" = "x86_64" ]; then
   ui_print "- Using packaged x64 binaries"
