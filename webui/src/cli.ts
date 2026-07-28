@@ -204,6 +204,42 @@ export class Cli {
     if (result.errno !== 0) throw new Error(`setBootHash failed (${result.errno})`)
   }
 
+  // Apply prop-level hiding from a conf file (one prop per line; bare prop name
+  // deletes it, "prop=value" sets it). Used by the Prop dialog and re-run on
+  // boot by post-fs-data.sh so the hiding survives reboots.
+  async applyHideProps(confPath: string): Promise<void> {
+    const managerPath = await this.getManagerPath()
+    const script = `[ -f '${confPath}' ] || exit 0
+RP=
+for rp in /system_ext/bin/resetprop /system/bin/resetprop /data/adb/ksu/bin/resetprop /data/adb/magisk/resetprop; do
+  [ -x "$rp" ] && RP="$rp" && break
+done
+[ -z "$RP" ] && command -v resetprop >/dev/null 2>&1 && RP=resetprop
+[ -z "$RP" ] && exit 0
+while IFS= read -r line || [ -n "$line" ]; do
+  line="\${line%%#*}"
+  line="$(echo "$line" | tr -d '[:space:]')"
+  [ -z "$line" ] && continue
+  case "$line" in
+    *=*) prop="\${line%%=*}"; val="\${line#*=}"; "$RP" -n "$prop" "$val" >/dev/null 2>&1 ;;
+    *) "$RP" -d "$line" >/dev/null 2>&1 ;;
+  esac
+done < '${confPath}'`
+    const result = await exec(script, { env: { PATH: `$PATH:${managerPath}` } })
+    if (result.errno !== 0) throw new Error(`applyHideProps failed (${result.errno})`)
+  }
+
+  async getAdbEnabled(): Promise<boolean> {
+    const result = await exec('settings get global adb_enabled')
+    if (result.errno !== 0) return false
+    return result.stdout.trim() === '1'
+  }
+
+  async setAdbEnabled(enabled: boolean): Promise<void> {
+    const result = await exec(`settings put global adb_enabled ${enabled ? 1 : 0}`)
+    if (result.errno !== 0) throw new Error(`setAdbEnabled failed (${result.errno})`)
+  }
+
   async getMagiskDenyList(): Promise<string[]> {
     if (import.meta.env.DEV) {
       return [

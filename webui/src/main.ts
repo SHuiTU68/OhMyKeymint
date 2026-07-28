@@ -177,9 +177,11 @@ if (!isOmk) {
   mainMenu.hideItem('omk-menu') // Hide OMK submenu for non-OMK modules
 }
 if (isOmk) {
-  // Built-in WebUI: no separate addon to uninstall; prop handler is TA_utl-only.
+  // Built-in WebUI: no separate addon to uninstall. The prop dialog stays
+  // available for OMK since it now hosts prop-level hiding, the USB debugging
+  // toggle, and the verified boot hash reset. The Shamiko prop-handler toggle
+  // is hidden inside the dialog for OMK builds.
   document.querySelector<HTMLElement>('.uninstall')?.classList.add('hide')
-  if (!import.meta.env.DEV) mainMenu.hideItem('prop-setting')
 }
 
 async function restartDaemon(which: 'keymint' | 'injector' | 'all'): Promise<void> {

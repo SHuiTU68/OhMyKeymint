@@ -25,6 +25,8 @@
     <string name="help_prop_settings_description">Prop 相关设置：</string>
     <string name="help_prop_settings_handler">**Prop 助手** - shamiko resetprop 脚本开关。</string>
     <string name="help_prop_settings_boot_hash">**哈希值** - 从 [KeyAttestation](https://github.com/vvb2060/KeyAttestation/releases获取 `verifiedBootHash`。通过重置 `ro.boot.vbmeta.digest` 来修复异常的启动状态。</string>
+    <string name="help_prop_settings_hide_props">**属性隐藏** - 通过 `resetprop` 隐藏或覆盖系统属性。每行一条；仅写属性名则删除该属性（如 `ro.debuggable`），`属性=值` 则设置为指定值。开机时自动重新应用。</string>
+    <string name="help_prop_settings_usb_debug">**USB 调试** - 切换 `adb_enabled`。关闭它不会影响当前 WebUI 会话。</string>
     <!-- Update -->
     <string name="update_update_available">发现新的版本</string>
     <string name="update_redirect_to_release">点击下载最新版本</string>
@@ -63,6 +65,9 @@
     <!-- Prop Dialog -->
     <string name="prop_handler">Prop 助手</string>
     <string name="boot_hash_title">哈希值</string>
+    <string name="usb_debugging">USB 调试</string>
+    <string name="hide_props_title">属性隐藏</string>
+    <string name="hide_props_hint">每行一条；仅写属性名则删除，属性=值 则设置</string>
     <!-- About -->
     <string name="about_module_name_line1">TS插件</string>
     <string name="about_module_name_line2">更新目标列表</string>

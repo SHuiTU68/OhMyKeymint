@@ -53,6 +53,8 @@ export class HelpDialog {
             <p data-i18n="help_prop_settings_description"></p>
             <ul>
               <li data-i18n="help_prop_settings_handler"></li>
+              <li data-i18n="help_prop_settings_hide_props"></li>
+              <li data-i18n="help_prop_settings_usb_debug"></li>
               <li data-i18n="help_prop_settings_boot_hash"></li>
             </ul>
           </div>
