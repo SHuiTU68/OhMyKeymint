@@ -206,7 +206,7 @@ export class Cli {
 
   // Apply prop-level hiding from a conf file (one prop per line; bare prop name
   // deletes it, "prop=value" sets it). Used by the Prop dialog and re-run on
-  // boot by post-fs-data.sh so the hiding survives reboots.
+  // boot by service.sh so the hiding survives reboots.
   async applyHideProps(confPath: string): Promise<void> {
     const managerPath = await this.getManagerPath()
     const script = `[ -f '${confPath}' ] || exit 0

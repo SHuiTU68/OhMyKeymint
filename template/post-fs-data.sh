@@ -35,30 +35,3 @@ if [ -f "$TARGET_INJECTOR_CONFIG" ]; then
   chmod 0600 "$TARGET_INJECTOR_CONFIG"
   chown 1017:1017 "$TARGET_INJECTOR_CONFIG"
 fi
-
-# Apply prop-level hiding (hide_props.conf: one prop per line; a bare prop name
-# deletes it, "prop=value" sets the value). Runs early so props are hidden
-# before apps read them. Re-applied from the WebUI on demand.
-HIDE_PROPS_CONF="$STATE_DIR/hide_props.conf"
-RESETPROP_BIN=
-for rp in /system_ext/bin/resetprop /system/bin/resetprop /data/adb/ksu/bin/resetprop /data/adb/magisk/resetprop; do
-  [ -x "$rp" ] && RESETPROP_BIN="$rp" && break
-done
-[ -z "$RESETPROP_BIN" ] && command -v resetprop >/dev/null 2>&1 && RESETPROP_BIN=resetprop
-if [ -f "$HIDE_PROPS_CONF" ] && [ -n "$RESETPROP_BIN" ]; then
-  while IFS= read -r line || [ -n "$line" ]; do
-    line="${line%%#*}"
-    line="$(echo "$line" | tr -d '[:space:]')"
-    [ -z "$line" ] && continue
-    case "$line" in
-      *=*)
-        prop="${line%%=*}"
-        val="${line#*=}"
-        "$RESETPROP_BIN" -n "$prop" "$val" >/dev/null 2>&1
-        ;;
-      *)
-        "$RESETPROP_BIN" -d "$line" >/dev/null 2>&1
-        ;;
-    esac
-  done < "$HIDE_PROPS_CONF"
-fi
