@@ -12,6 +12,7 @@ use rsbinder::Strong;
 use anyhow::{Context, Result};
 
 use crate::{
+    android::hardware::security::keymint::SecurityLevel::SecurityLevel as KmSecurityLevel,
     android::hardware::security::secureclock::ISecureClock::ISecureClock,
     err,
     keymaster::{
@@ -41,7 +42,17 @@ static GC: LazyLock<Arc<Gc>> = LazyLock::new(|| {
             Box::new(|uuid, blob| {
                 let security_level = uuid.to_security_level().unwrap();
 
-                let km_dev = get_keymint_wrapper(security_level).unwrap();
+                if security_level == KmSecurityLevel::STRONGBOX
+                    && !crate::plat::keymint_profile::strongbox_keymint_present()
+                {
+                    log::warn!(
+                        "Skipping deleteKey for stale StrongBox blob because the StrongBox HAL is not present"
+                    );
+                    return Ok(());
+                }
+
+                let km_dev = get_keymint_wrapper(security_level)
+                    .context(err!("Trying to open KeyMint device for blob invalidation"))?;
                 let _wp = wd::watch("invalidate key closure: calling IKeyMintDevice::deleteKey");
                 km_dev
                     .delete_Key(blob)
