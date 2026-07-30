@@ -188,6 +188,14 @@ pub fn direct_write_and_verify_property(property: &str, value: &str) -> Result<(
     execute_write_and_verify(&command, property, value)
 }
 
+/// Delete a property via `resetprop -d`. Used to honor prop-level hiding from
+/// `hide_props.conf` so bootstrap does not leave sensitive boot-state props
+/// readable. Best-effort: some read-only props set by init cannot be removed.
+pub fn direct_delete_property(property: &str) -> Result<()> {
+    let command = find_resetprop_command()?;
+    execute_delete(&command, property)
+}
+
 pub fn read_string_property(name: &str) -> Option<String> {
     rsproperties::get::<String>(name)
         .ok()
@@ -195,14 +203,23 @@ pub fn read_string_property(name: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+static CACHED_COMMAND: OnceLock<Option<ResetpropCommand>> = OnceLock::new();
+
 pub fn find_resetprop_command() -> Result<ResetpropCommand> {
+    let cached = CACHED_COMMAND.get_or_init(find_resetprop_command_uncached);
+    cached
+        .clone()
+        .ok_or_else(|| anyhow!("no usable resetprop binary found"))
+}
+
+fn find_resetprop_command_uncached() -> Option<ResetpropCommand> {
     if let Some(program) = std::env::var_os("PATH").and_then(|path| {
         std::env::split_paths(&path)
             .map(|directory| directory.join("resetprop"))
             .find(|candidate| candidate.exists())
             .map(|candidate| candidate.to_string_lossy().into_owned())
     }) {
-        return Ok(ResetpropCommand {
+        return Some(ResetpropCommand {
             program,
             prepend_arg: None,
         });
@@ -210,14 +227,14 @@ pub fn find_resetprop_command() -> Result<ResetpropCommand> {
 
     for (program, prepend_arg) in RESETPROP_FALLBACKS {
         if Path::new(program).exists() {
-            return Ok(ResetpropCommand {
+            return Some(ResetpropCommand {
                 program: program.to_string(),
                 prepend_arg: prepend_arg.map(str::to_string),
             });
         }
     }
 
-    Err(anyhow!("no usable resetprop binary found"))
+    None
 }
 
 fn execute_write_and_verify(command: &ResetpropCommand, property: &str, value: &str) -> Result<()> {
@@ -244,6 +261,22 @@ fn execute_write_and_verify(command: &ResetpropCommand, property: &str, value: &
             actual
         )
     }
+}
+
+fn execute_delete(command: &ResetpropCommand, property: &str) -> Result<()> {
+    let mut process = Command::new(&command.program);
+    if let Some(prepend_arg) = &command.prepend_arg {
+        process.arg(prepend_arg);
+    }
+    let status = process
+        .arg("-d")
+        .arg(property)
+        .status()
+        .with_context(|| format!("failed to execute resetprop -d for {property}"))?;
+    if !status.success() {
+        bail!("resetprop -d failed for {property} with status {status}");
+    }
+    Ok(())
 }
 
 struct ResetpropHelperClient {

@@ -1,8 +1,9 @@
 use std::{
+    collections::HashMap,
     fs::File,
     io::Read,
     path::{Path, PathBuf},
-    sync::mpsc,
+    sync::{mpsc, OnceLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -36,6 +37,7 @@ const VENDOR_VERIFIED_BOOT_STATE_PROP: &str = "vendor.boot.verifiedbootstate";
 const VBMETA_DEVICE_STATE_PROP: &str = "ro.boot.vbmeta.device_state";
 const VENDOR_VBMETA_DEVICE_STATE_PROP: &str = "vendor.boot.vbmeta.device_state";
 const OEM_UNLOCK_ALLOWED_PROP: &str = "sys.oem_unlock_allowed";
+const HIDE_PROPS_CONF: &str = "/data/adb/omk/hide_props.conf";
 const ORIGINAL_HASH_TIMEOUT: Duration = Duration::from_secs(5);
 const AVB_HEADER_SIZE: usize = 256;
 const BUILD_PROP_PATHS: &[&str] = &[
@@ -296,12 +298,12 @@ fn sync_sysprops_if_needed(
 ) -> Result<()> {
     if vb_key.source.needs_sysprop_write() {
         let value = hex::encode(vb_key.value);
-        resetprop::direct_write_and_verify_property(VBMETA_KEY_PROP, &value)?;
+        apply_sync_property(VBMETA_KEY_PROP, &value)?;
     }
 
     if vb_hash.source.needs_sysprop_write() {
         let value = hex::encode(vb_hash.value);
-        resetprop::direct_write_and_verify_property(VBMETA_HASH_PROP, &value)?;
+        apply_sync_property(VBMETA_HASH_PROP, &value)?;
     }
 
     let flash_locked = if device_locked { "1" } else { "0" };
@@ -313,14 +315,34 @@ fn sync_sysprops_if_needed(
     };
     let vbmeta_device_state = if device_locked { "locked" } else { "unlocked" };
 
-    sync_string_sysprop(FLASH_LOCKED_PROP, flash_locked)?;
-    sync_string_sysprop(OEM_UNLOCK_ALLOWED_PROP, oem_unlock_allowed)?;
-    sync_string_sysprop(VERIFIED_BOOT_STATE_PROP, verified_boot_state)?;
-    sync_string_sysprop(VENDOR_VERIFIED_BOOT_STATE_PROP, verified_boot_state)?;
-    sync_string_sysprop(VBMETA_DEVICE_STATE_PROP, vbmeta_device_state)?;
-    sync_string_sysprop(VENDOR_VBMETA_DEVICE_STATE_PROP, vbmeta_device_state)?;
+    apply_sync_property(FLASH_LOCKED_PROP, flash_locked)?;
+    apply_sync_property(OEM_UNLOCK_ALLOWED_PROP, oem_unlock_allowed)?;
+    apply_sync_property(VERIFIED_BOOT_STATE_PROP, verified_boot_state)?;
+    apply_sync_property(VENDOR_VERIFIED_BOOT_STATE_PROP, verified_boot_state)?;
+    apply_sync_property(VBMETA_DEVICE_STATE_PROP, vbmeta_device_state)?;
+    apply_sync_property(VENDOR_VBMETA_DEVICE_STATE_PROP, vbmeta_device_state)?;
 
     Ok(())
+}
+
+/// Sync `property` to `desired_value`, deferring to the user's `hide_props.conf`
+/// (the same file applied by `template/service.sh`): a bare entry deletes the
+/// property, `prop=value` overrides the value, and an unlisted property is
+/// synced normally. This prevents bootstrap from rewriting properties that the
+/// shell layer hides via `resetprop -d`, which would otherwise reintroduce
+/// boot-state props detectable via reflection.
+fn apply_sync_property(property: &str, desired_value: &str) -> Result<()> {
+    match hide_directive_for(property) {
+        HideDirective::Delete => {
+            if resetprop::read_string_property(property).is_some() {
+                if let Err(error) = resetprop::direct_delete_property(property) {
+                    log::warn!("failed to hide property {property}: {error:#}");
+                }
+            }
+            Ok(())
+        }
+        HideDirective::Override(value) => sync_string_sysprop(property, value),
+    }
 }
 
 fn sync_string_sysprop(property: &str, value: &str) -> Result<()> {
@@ -328,6 +350,55 @@ fn sync_string_sysprop(property: &str, value: &str) -> Result<()> {
         resetprop::direct_write_and_verify_property(property, value)?;
     }
     Ok(())
+}
+
+#[derive(Clone, Debug)]
+enum HideDirective {
+    Delete,
+    Override(String),
+}
+
+static HIDE_PROPS: OnceLock<HashMap<String, HideDirective>> = OnceLock::new();
+
+/// Returns the parsed `hide_props.conf` directive for `property`, or `None` when
+/// the property is not listed. The map is parsed once per process and shared
+/// with the shell-layer applier, so both sides agree on what is hidden.
+fn hide_directive_for(property: &str) -> Option<&'static HideDirective> {
+    HIDE_PROPS.get_or_init(load_hide_props).get(property)
+}
+
+fn load_hide_props() -> HashMap<String, HideDirective> {
+    let Ok(content) = std::fs::read_to_string(HIDE_PROPS_CONF) else {
+        return HashMap::new();
+    };
+    parse_hide_props_content(&content)
+}
+
+/// Parse `hide_props.conf` content. Mirrors `template/service.sh`: strip `#`
+/// comments and all whitespace, then a bare name deletes the prop while
+/// `prop=value` overrides it.
+fn parse_hide_props_content(content: &str) -> HashMap<String, HideDirective> {
+    let mut map = HashMap::new();
+    for raw in content.lines() {
+        let line: String = raw
+            .split('#')
+            .next()
+            .unwrap_or("")
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some((prop, val)) = line.split_once('=') {
+            if !prop.is_empty() && !val.is_empty() {
+                map.insert(prop.to_string(), HideDirective::Override(val.to_string()));
+            }
+        } else {
+            map.insert(line, HideDirective::Delete);
+        }
+    }
+    map
 }
 
 fn read_hex_property(name: &str) -> Option<[u8; 32]> {
@@ -688,6 +759,44 @@ ro.build.version.security_patch.extra = ignored
         assert!(TrustValueSource::RandomFallback.needs_sysprop_write());
         assert!(!TrustValueSource::ExplicitHex.needs_sysprop_write());
         assert!(!TrustValueSource::Property.needs_sysprop_write());
+    }
+
+    #[test]
+    fn hide_props_parser_matches_service_sh_semantics() {
+        let conf = "\
+            # comment line\n\
+            sys.oem_unlock_allowed   # trailing comment\n\
+            ro.boot.flash.locked = 1\n\
+            ro.debuggable\n\
+            \n\
+            ro.boot.verifiedbootstate=green  # locked look\n\
+            empty=\n\
+            =novalue\n\
+        ";
+        let map = parse_hide_props_content(conf);
+
+        // Bare name -> Delete (whitespace stripped).
+        assert!(matches!(
+            map.get("sys.oem_unlock_allowed"),
+            Some(HideDirective::Delete)
+        ));
+        assert!(matches!(
+            map.get("ro.debuggable"),
+            Some(HideDirective::Delete)
+        ));
+        // prop=value -> Override, whitespace around `=` removed.
+        assert_eq!(
+            map.get("ro.boot.flash.locked"),
+            Some(&HideDirective::Override("1".to_string()))
+        );
+        assert_eq!(
+            map.get("ro.boot.verifiedbootstate"),
+            Some(&HideDirective::Override("green".to_string()))
+        );
+        // Empty prop/value entries are dropped.
+        assert!(!map.contains_key("empty"));
+        assert!(!map.contains_key(""));
+        assert_eq!(map.len(), 4);
     }
 
     fn build_test_vbmeta(
