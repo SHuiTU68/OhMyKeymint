@@ -333,7 +333,7 @@ fn sync_sysprops_if_needed(
 /// boot-state props detectable via reflection.
 fn apply_sync_property(property: &str, desired_value: &str) -> Result<()> {
     match hide_directive_for(property) {
-        HideDirective::Delete => {
+        Some(HideDirective::Delete) => {
             if resetprop::read_string_property(property).is_some() {
                 if let Err(error) = resetprop::direct_delete_property(property) {
                     log::warn!("failed to hide property {property}: {error:#}");
@@ -341,7 +341,8 @@ fn apply_sync_property(property: &str, desired_value: &str) -> Result<()> {
             }
             Ok(())
         }
-        HideDirective::Override(value) => sync_string_sysprop(property, value),
+        Some(HideDirective::Override(value)) => sync_string_sysprop(property, value),
+        None => sync_string_sysprop(property, desired_value),
     }
 }
 
