@@ -337,6 +337,33 @@ requires a keymint restart.
 unlocked. This does not actually lock or unlock the bootloader. Changing it
 requires a keymint restart.
 
+### Boot-state properties and `hide_props.conf`
+
+Every keymint start reconciles the boot-state properties that a locked,
+verified stock device exposes, so detection apps see a coherent picture:
+
+- `ro.boot.flash.locked` = `1` when locked, `0` otherwise
+- `ro.boot.verifiedbootstate` / `vendor.boot.verifiedbootstate` = `green` or `orange`
+- `ro.boot.vbmeta.device_state` / `vendor.boot.vbmeta.device_state` = `locked` or `unlocked`
+- `sys.oem_unlock_allowed` = `0` when locked (deleted on Android 16+)
+
+On Android 16+ (SDK 36) any value of `sys.oem_unlock_allowed` is treated as an
+OEM-unlock risk, so OMK deletes the property entirely instead of writing a
+value. On older releases it writes `0`/`1` as above.
+
+The `/data/adb/omk/hide_props.conf` file gives you per-property control over
+this reconciliation (it is re-applied on boot and from the WebUI):
+
+- A bare property name deletes the property.
+- `prop=value` overrides the value.
+- An unlisted property is synced to its normal derived value.
+
+For example, to force-hide the OEM unlock property on every Android version:
+
+```text
+sys.oem_unlock_allowed
+```
+
 ### `[device]`
 
 This section supplies device identity strings when an app explicitly requests

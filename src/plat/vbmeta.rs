@@ -449,7 +449,6 @@ fn sync_sysprops_if_needed(
     }
 
     let flash_locked = if device_locked { "1" } else { "0" };
-    let oem_unlock_allowed = if device_locked { "0" } else { "1" };
     let verified_boot_state = if verified_boot_state {
         "green"
     } else {
@@ -458,13 +457,40 @@ fn sync_sysprops_if_needed(
     let vbmeta_device_state = if device_locked { "locked" } else { "unlocked" };
 
     apply_sync_property(FLASH_LOCKED_PROP, flash_locked)?;
-    apply_sync_property(OEM_UNLOCK_ALLOWED_PROP, oem_unlock_allowed)?;
+    sync_oem_unlock_allowed(device_locked)?;
     apply_sync_property(VERIFIED_BOOT_STATE_PROP, verified_boot_state)?;
     apply_sync_property(VENDOR_VERIFIED_BOOT_STATE_PROP, verified_boot_state)?;
     apply_sync_property(VBMETA_DEVICE_STATE_PROP, vbmeta_device_state)?;
     apply_sync_property(VENDOR_VBMETA_DEVICE_STATE_PROP, vbmeta_device_state)?;
 
     Ok(())
+}
+
+/// Sync the OEM unlock state. On Android 16+ (SDK 36) any value of
+/// `sys.oem_unlock_allowed` is treated as a dangerous OEM-unlock signal
+/// (DuckDetector flags `*`), so the property must be hidden entirely unless the
+/// user pinned an explicit override in `hide_props.conf`. On older releases the
+/// app-observable value is what matters, so write `0`/`1` as before.
+fn sync_oem_unlock_allowed(device_locked: bool) -> Result<()> {
+    let android_16_plus =
+        kmr_common::android_version::android_major_version().is_some_and(|version| version >= 16);
+    if !android_16_plus {
+        let value = if device_locked { "0" } else { "1" };
+        return apply_sync_property(OEM_UNLOCK_ALLOWED_PROP, value);
+    }
+    match hide_directive_for(OEM_UNLOCK_ALLOWED_PROP) {
+        Some(HideDirective::Override(value)) => {
+            sync_string_sysprop(OEM_UNLOCK_ALLOWED_PROP, &value)
+        }
+        _ => {
+            if resetprop::read_string_property(OEM_UNLOCK_ALLOWED_PROP).is_some() {
+                if let Err(error) = resetprop::direct_delete_property(OEM_UNLOCK_ALLOWED_PROP) {
+                    log::warn!("failed to hide property {OEM_UNLOCK_ALLOWED_PROP}: {error:#}");
+                }
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Sync `property` to `desired_value`, deferring to the user's `hide_props.conf`
