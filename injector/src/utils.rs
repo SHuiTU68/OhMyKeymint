@@ -208,26 +208,7 @@ pub fn find_process_by_name(target_name: &str) -> Result<(i32, PathBuf)> {
         };
         let path = entry.path();
 
-        let process_name = match std::fs::read(path.join("cmdline")) {
-            Ok(cmdline) => {
-                let first = cmdline
-                    .split(|byte| *byte == 0)
-                    .find(|part| !part.is_empty())
-                    .unwrap_or(&[]);
-                Path::new(std::ffi::OsStr::from_bytes(first))
-                    .file_name()
-                    .and_then(std::ffi::OsStr::to_str)
-                    .map(str::to_owned)
-            }
-            Err(_) => None,
-        }
-        .or_else(|| {
-            std::fs::read_to_string(path.join("comm"))
-                .ok()
-                .map(|name| name.trim().to_owned())
-        });
-
-        if process_name.as_deref() != Some(target_name) {
+        if process_name(pid).as_deref() != Some(target_name) {
             continue;
         }
 
@@ -243,4 +224,24 @@ pub fn find_process_by_name(target_name: &str) -> Result<(i32, PathBuf)> {
         format!("Process '{}' not found", target_name),
     ))
     .context("")
+}
+
+pub fn process_name(pid: i32) -> Option<String> {
+    let path = PathBuf::from(format!("/proc/{pid}"));
+    std::fs::read(path.join("cmdline"))
+        .ok()
+        .and_then(|cmdline| {
+            let first = cmdline
+                .split(|byte| *byte == 0)
+                .find(|part| !part.is_empty())?;
+            Path::new(std::ffi::OsStr::from_bytes(first))
+                .file_name()
+                .and_then(std::ffi::OsStr::to_str)
+                .map(str::to_owned)
+        })
+        .or_else(|| {
+            std::fs::read_to_string(path.join("comm"))
+                .ok()
+                .map(|name| name.trim().to_owned())
+        })
 }

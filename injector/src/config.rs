@@ -1,6 +1,7 @@
+use kmr_common::consts::{KEYSTORE_GID, KEYSTORE_UID};
 use kmr_common::runtime::{
     file_watch::{self, WatchTrigger},
-    fs::backup_file_with_reason,
+    fs::atomic_replace_preserving_metadata,
     retry::{retry_read_race, ReadRaceErrorKind, RetryOutcome},
 };
 use log::LevelFilter;
@@ -9,16 +10,18 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
 pub const DEFAULT_CONFIG_PATH: &str = "/data/misc/keystore/omk/injector.toml";
+const CURRENT_CONFIG_VERSION: u32 = 1;
 const REPLACE_SAVE_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 const REPLACE_SAVE_RETRY_LIMIT: usize = 10;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct InjectorConfig {
+    pub version: u32,
     pub scoop: Vec<String>,
     pub scoop_details: BTreeMap<String, toml::Table>,
     pub main: MainConfig,
@@ -63,6 +66,7 @@ pub struct InterceptConfig {
 impl Default for InjectorConfig {
     fn default() -> Self {
         Self {
+            version: CURRENT_CONFIG_VERSION,
             scoop: default_scoop(),
             scoop_details: BTreeMap::new(),
             main: MainConfig::default(),
@@ -124,6 +128,7 @@ impl Default for InterceptConfig {
 
 #[derive(Debug)]
 enum LoadError {
+    Missing(io::Error),
     Io(io::Error),
     Parse(String),
 }
@@ -131,7 +136,7 @@ enum LoadError {
 impl std::fmt::Display for LoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Io(error) => write!(f, "{error}"),
+            Self::Missing(error) | Self::Io(error) => write!(f, "{error}"),
             Self::Parse(error) => write!(f, "{error}"),
         }
     }
@@ -148,8 +153,14 @@ struct ScoopHeaderValue {
     package: String,
 }
 
+#[derive(Deserialize)]
+struct ConfigVersion {
+    version: Option<toml::Spanned<i64>>,
+}
+
 #[derive(Serialize)]
 struct WritableConfig<'a> {
+    version: u32,
     scoop: &'a [String],
     main: &'a MainConfig,
     filter: &'a FilterConfig,
@@ -158,6 +169,7 @@ struct WritableConfig<'a> {
 
 static CONFIG: OnceLock<RwLock<Arc<InjectorConfig>>> = OnceLock::new();
 static WATCHER_STARTED: OnceLock<()> = OnceLock::new();
+static CONFIG_FILE_WRITE_LOCK: Mutex<()> = Mutex::new(());
 
 impl LoadContext {
     fn label(self) -> &'static str {
@@ -183,7 +195,12 @@ pub fn get() -> Arc<InjectorConfig> {
 
 fn ensure_initialized() {
     let path = config_path();
-    CONFIG.get_or_init(|| RwLock::new(Arc::new(load_or_seed(&path, LoadContext::Startup))));
+    CONFIG.get_or_init(|| {
+        RwLock::new(Arc::new(
+            load_or_seed(&path, LoadContext::Startup)
+                .expect("startup config loading always returns a fallback"),
+        ))
+    });
     WATCHER_STARTED.get_or_init(|| start_watcher(path));
 }
 
@@ -193,9 +210,32 @@ fn config_path() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_PATH))
 }
 
-fn load_from_path(path: &Path) -> Result<InjectorConfig, LoadError> {
-    let contents = fs::read_to_string(path).map_err(LoadError::Io)?;
-    parse_config(&contents).map_err(LoadError::Parse)
+fn load_from_path(path: &Path, allow_migration: bool) -> Result<InjectorConfig, LoadError> {
+    let _write_guard = CONFIG_FILE_WRITE_LOCK
+        .lock()
+        .map_err(|_| LoadError::Io(io::Error::other("config file write lock poisoned")))?;
+    let contents = fs::read_to_string(path).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            LoadError::Missing(error)
+        } else {
+            LoadError::Io(error)
+        }
+    })?;
+    let (config, migrated_contents) =
+        parse_versioned_config(&contents, allow_migration).map_err(LoadError::Parse)?;
+    if let Some(migrated_contents) = migrated_contents {
+        let (default_uid, default_gid) = default_owner(path);
+        atomic_replace_preserving_metadata(
+            path,
+            migrated_contents.as_bytes(),
+            0o600,
+            default_uid,
+            default_gid,
+        )
+        .map_err(LoadError::Io)?;
+        log::info!("migrated injector.toml to version {CURRENT_CONFIG_VERSION}");
+    }
+    Ok(config)
 }
 
 fn load_with_context(
@@ -203,14 +243,22 @@ fn load_with_context(
     context: LoadContext,
 ) -> Result<RetryOutcome<InjectorConfig>, LoadError> {
     match context {
-        LoadContext::Reload(trigger) if trigger.should_retry_reads() => {
-            load_with_read_race_retry(path, context, load_from_path, std::thread::sleep)
+        LoadContext::Reload(trigger) if trigger.should_retry_reads() => load_with_read_race_retry(
+            path,
+            context,
+            |path| load_from_path(path, false),
+            std::thread::sleep,
+        ),
+        LoadContext::Startup => {
+            load_from_path(path, true).map(|value| RetryOutcome { value, retries: 0 })
         }
-        _ => load_from_path(path).map(|value| RetryOutcome { value, retries: 0 }),
+        LoadContext::Reload(_) => {
+            load_from_path(path, false).map(|value| RetryOutcome { value, retries: 0 })
+        }
     }
 }
 
-fn load_or_seed(path: &Path, context: LoadContext) -> InjectorConfig {
+fn load_or_seed(path: &Path, context: LoadContext) -> Option<InjectorConfig> {
     match load_with_context(path, context) {
         Ok(loaded) => {
             if loaded.retries > 0 {
@@ -229,59 +277,41 @@ fn load_or_seed(path: &Path, context: LoadContext) -> InjectorConfig {
                     context.label()
                 );
             }
-            loaded.value
+            Some(loaded.value)
         }
-        Err(LoadError::Io(error)) => {
-            let reason = format!("failed to read config: {error}");
+        Err(LoadError::Missing(error)) if matches!(context, LoadContext::Startup) => {
             log::warn!(
-                "load from {} via {} {}; restoring current config",
+                "config missing at {} during startup: {}; seeding defaults",
+                path.display(),
+                error
+            );
+            let mut config = InjectorConfig::default();
+            if let Err(write_error) = write_config(path, &config) {
+                log::error!(
+                    "failed to seed config at {}: {}; disabling injector",
+                    path.display(),
+                    write_error
+                );
+                config.main.enabled = false;
+            }
+            Some(config)
+        }
+        Err(error) => {
+            log::warn!(
+                "load from {} via {} failed: {}; keeping current config",
                 path.display(),
                 context.label(),
-                reason
+                error
             );
-            recover_broken_config(path, &reason)
-        }
-        Err(LoadError::Parse(error)) => {
-            let reason = format!("failed to parse config: {error}");
-            log::warn!(
-                "load from {} via {} {}; restoring current config",
-                path.display(),
-                context.label(),
-                reason
-            );
-            recover_broken_config(path, &reason)
+            if matches!(context, LoadContext::Startup) {
+                let mut config = current_config_snapshot();
+                config.main.enabled = false;
+                Some(config)
+            } else {
+                None
+            }
         }
     }
-}
-
-fn recover_broken_config(path: &Path, reason: &str) -> InjectorConfig {
-    if path.exists() {
-        let backup_path = PathBuf::from(format!("{}.bak", path.display()));
-        match backup_file_with_reason(
-            path,
-            &backup_path,
-            "injector config recovery reason",
-            reason,
-            false,
-        ) {
-            Ok(()) => log::info!("moved invalid config to {}", backup_path.display()),
-            Err(backup_error) => log::error!(
-                "failed to preserve broken config {}: {}",
-                path.display(),
-                backup_error
-            ),
-        }
-    }
-
-    let replacement = current_config_snapshot();
-    if let Err(write_error) = write_config(path, &replacement) {
-        log::error!(
-            "failed to write replacement config to {}: {}",
-            path.display(),
-            write_error
-        );
-    }
-    replacement
 }
 
 fn current_config_snapshot() -> InjectorConfig {
@@ -298,27 +328,32 @@ fn current_config_snapshot() -> InjectorConfig {
 }
 
 fn write_config(path: &Path, config: &InjectorConfig) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
+    let _write_guard = CONFIG_FILE_WRITE_LOCK
+        .lock()
+        .map_err(|_| io::Error::other("config file write lock poisoned"))?;
     let contents = render_config(config)?;
-    fs::write(path, contents)?;
+    let (default_uid, default_gid) = default_owner(path);
+    atomic_replace_preserving_metadata(path, contents.as_bytes(), 0o600, default_uid, default_gid)?;
     log::info!("wrote config to {}", path.display());
     Ok(())
+}
+
+fn default_owner(path: &Path) -> (u32, u32) {
+    if path == Path::new(DEFAULT_CONFIG_PATH) {
+        (KEYSTORE_UID, KEYSTORE_GID)
+    } else {
+        (unsafe { libc::geteuid() }, unsafe { libc::getegid() })
+    }
 }
 
 fn render_config(config: &InjectorConfig) -> io::Result<String> {
     let mut contents = String::from(
         "# With `[filter].enabled = true`, a UID is intercepted when any package\n\
          # sharing that UID is listed in `scoop`.\n\
-         # Filter deny settings still apply to every package resolved for the UID.\n\
-         # Optional per-package settings can be added under [scoop.<package>].\n\
-         # Example:\n\
-         # [scoop.io.github.vvb2060.keyattestation]\n\
-         # mode = \"strict\"\n\n",
+         # Filter deny settings still apply to every package resolved for the UID.\n\n",
     );
     let base = toml::to_string_pretty(&WritableConfig {
+        version: config.version,
         scoop: &config.scoop,
         main: &config.main,
         filter: &config.filter,
@@ -342,11 +377,72 @@ fn render_config(config: &InjectorConfig) -> io::Result<String> {
     Ok(contents)
 }
 
+#[cfg(test)]
 fn parse_config(contents: &str) -> Result<InjectorConfig, String> {
-    let preprocessed = preprocess_config(contents)?;
+    parse_versioned_config(contents, true).map(|(config, _)| config)
+}
+
+fn parse_versioned_config(
+    contents: &str,
+    allow_migration: bool,
+) -> Result<(InjectorConfig, Option<String>), String> {
+    let without_bom = contents.strip_prefix('\u{feff}').unwrap_or(contents);
+    let bom_len = contents.len() - without_bom.len();
+    let preprocessed = preprocess_config(without_bom)?;
+    let version: ConfigVersion =
+        toml::from_str(&preprocessed).map_err(|error| error.to_string())?;
+    let migrated = match version.version {
+        None => {
+            if !allow_migration {
+                return Err(
+                    "injector config version 0 requires an injector restart to migrate".into(),
+                );
+            }
+            Some(insert_config_version(contents, bom_len))
+        }
+        Some(version) => match *version.get_ref() {
+            0 if allow_migration => {
+                let span = version.span();
+                let mut migrated = contents.to_string();
+                migrated.replace_range(span.start + bom_len..span.end + bom_len, "1");
+                Some(migrated)
+            }
+            0 => {
+                return Err(
+                    "injector config version 0 requires an injector restart to migrate".into(),
+                )
+            }
+            version if version == i64::from(CURRENT_CONFIG_VERSION) => None,
+            version if version < 0 => {
+                return Err(format!("config version must not be negative: {version}"))
+            }
+            version => {
+                return Err(format!(
+                "config version {version} is newer than supported version {CURRENT_CONFIG_VERSION}"
+            ))
+            }
+        },
+    };
+    let candidate = migrated.as_deref().unwrap_or(contents);
+    let candidate = candidate.strip_prefix('\u{feff}').unwrap_or(candidate);
+    let preprocessed = preprocess_config(candidate)?;
     let parsed: InjectorConfig =
         toml::from_str(&preprocessed).map_err(|error| error.to_string())?;
-    Ok(parsed.normalized())
+    Ok((parsed.normalized(), migrated))
+}
+
+fn insert_config_version(contents: &str, bom_len: usize) -> String {
+    let newline = if contents.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let mut migrated = String::with_capacity(contents.len() + 12);
+    migrated.push_str(&contents[..bom_len]);
+    migrated.push_str("version = 1");
+    migrated.push_str(newline);
+    migrated.push_str(&contents[bom_len..]);
+    migrated
 }
 
 fn preprocess_config(contents: &str) -> Result<String, String> {
@@ -443,7 +539,9 @@ fn start_watcher(path: PathBuf) {
 }
 
 fn reload_runtime_config(path: &Path, trigger: WatchTrigger) {
-    let config = load_or_seed(path, LoadContext::Reload(trigger));
+    let Some(config) = load_or_seed(path, LoadContext::Reload(trigger)) else {
+        return;
+    };
     if let Some(lock) = CONFIG.get() {
         match lock.write() {
             Ok(mut guard) => {
@@ -480,7 +578,7 @@ where
     retry_read_race(
         || loader(path),
         |error| match error {
-            LoadError::Io(_) => ReadRaceErrorKind::Retryable,
+            LoadError::Missing(_) | LoadError::Io(_) => ReadRaceErrorKind::Retryable,
             LoadError::Parse(_) => ReadRaceErrorKind::Fatal,
         },
         REPLACE_SAVE_RETRY_LIMIT,
@@ -527,240 +625,4 @@ impl InjectorConfig {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn temp_config_path(name: &str) -> PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should move forward")
-            .as_nanos();
-        std::env::temp_dir().join(format!("omk-injector-{name}-{unique}.toml"))
-    }
-
-    #[test]
-    fn config_defaults_and_log_levels_match_contract() {
-        let config = InjectorConfig::default();
-        assert!(config.main.enabled);
-        assert_eq!(config.scoop, default_scoop());
-        assert!(config.scoop_details.is_empty());
-        assert_eq!(config.main.log_level_filter(), LevelFilter::Debug);
-        assert!(config.filter.block_android_package);
-        assert!(!config.filter.allow_unknown_package);
-        assert!(config.intercept.get_security_level);
-        assert!(config.intercept.get_key_entry);
-        assert!(config.intercept.update_subcomponent);
-        assert!(config.intercept.list_entries);
-        assert!(config.intercept.delete_key);
-        assert!(config.intercept.grant);
-        assert!(config.intercept.ungrant);
-        assert!(config.intercept.get_number_of_entries);
-        assert!(config.intercept.list_entries_batched);
-        assert!(config.intercept.get_supplementary_attestation_info);
-
-        assert_eq!(parse_level_filter("warn"), Some(LevelFilter::Warn));
-        assert_eq!(parse_level_filter("WARNING"), Some(LevelFilter::Warn));
-        assert_eq!(parse_level_filter("trace"), Some(LevelFilter::Trace));
-        assert_eq!(parse_level_filter("unknown"), None);
-    }
-
-    #[test]
-    fn parses_new_scoop_format_and_preserves_package_details() {
-        let parsed = parse_config(
-            r#"
-scoop = ["com.example.app", "com.other.app", "com.example.app"]
-
-[scoop."com.example.app"]
-mode = "strict"
-
-[main]
-enabled = false
-log_level = "trace"
-
-[filter]
-enabled = true
-deny_packages = ["com.blocked"]
-block_android_package = false
-allow_unknown_package = true
-
-[intercept]
-get_security_level = false
-get_key_entry = true
-update_subcomponent = false
-list_entries = false
-delete_key = false
-grant = false
-ungrant = false
-get_number_of_entries = false
-list_entries_batched = false
-get_supplementary_attestation_info = true
-"#,
-        )
-        .expect("config should parse");
-
-        assert_eq!(
-            parsed.scoop,
-            vec!["com.example.app".to_string(), "com.other.app".to_string()]
-        );
-        assert_eq!(parsed.main.log_level_filter(), LevelFilter::Trace);
-        assert!(!parsed.main.enabled);
-        assert_eq!(
-            parsed
-                .scoop_details
-                .get("com.example.app")
-                .and_then(|table| table.get("mode"))
-                .and_then(toml::Value::as_str),
-            Some("strict")
-        );
-        assert!(!parsed.intercept.get_security_level);
-        assert!(parsed.intercept.get_key_entry);
-        assert!(!parsed.intercept.update_subcomponent);
-        assert!(!parsed.intercept.list_entries);
-        assert!(!parsed.intercept.delete_key);
-        assert!(!parsed.intercept.grant);
-        assert!(!parsed.intercept.ungrant);
-        assert!(!parsed.intercept.get_number_of_entries);
-        assert!(!parsed.intercept.list_entries_batched);
-        assert!(parsed.intercept.get_supplementary_attestation_info);
-    }
-
-    #[test]
-    fn legacy_config_syntax_is_rejected() {
-        let error = parse_config(
-            r#"
-[[scope]]
-package = "com.legacy.app"
-"#,
-        )
-        .expect_err("legacy scope syntax should be rejected");
-        assert!(error.contains("unknown field"));
-
-        let error = parse_config(
-            r#"
-scoop = ["com.example.app"]
-
-[filter]
-allow_packages = ["com.legacy.app"]
-"#,
-        )
-        .expect_err("legacy allow_packages should be rejected");
-        assert!(error.contains("unknown field"));
-    }
-
-    #[test]
-    fn rendered_config_uses_new_scoop_format() {
-        let mut config = InjectorConfig {
-            scoop: vec!["com.example.app".to_string()],
-            ..Default::default()
-        };
-        let mut table = toml::Table::new();
-        table.insert("enabled".to_string(), toml::Value::Boolean(true));
-        config
-            .scoop_details
-            .insert("com.example.app".to_string(), table);
-
-        let rendered = render_config(&config).expect("config should render");
-        assert!(rendered.contains("scoop = ["));
-        assert!(rendered.contains("[scoop.com.example.app]"));
-        assert!(!rendered.contains("[[scope]]"));
-        let reparsed = parse_config(&rendered).expect("rendered config should parse");
-        assert_eq!(reparsed.scoop_details, config.scoop_details);
-    }
-
-    #[test]
-    fn missing_and_invalid_config_recover_safely() {
-        let path = temp_config_path("missing");
-        if path.exists() {
-            fs::remove_file(&path).expect("stale test config should be removable");
-        }
-
-        let loaded = load_or_seed(&path, LoadContext::Startup);
-        assert!(path.exists(), "missing config should be written to disk");
-        assert_eq!(loaded.scoop, default_scoop());
-
-        let on_disk = fs::read_to_string(&path).expect("written config should be readable");
-        let reparsed = parse_config(&on_disk).expect("written config should parse");
-        assert_eq!(reparsed.scoop, default_scoop());
-
-        fs::remove_file(&path).expect("test config should be cleaned up");
-
-        let path = temp_config_path("invalid");
-        let backup = PathBuf::from(format!("{}.bak", path.display()));
-        fs::write(&path, "[main\nbroken").expect("invalid config should be written");
-
-        let loaded = load_or_seed(&path, LoadContext::Startup);
-        assert!(backup.exists(), "invalid config should be backed up");
-        assert_eq!(
-            loaded.scoop,
-            default_scoop(),
-            "defaults should be loaded after parse failure"
-        );
-
-        let rewritten = fs::read_to_string(&path).expect("rewritten config should be readable");
-        let reparsed = parse_config(&rewritten).expect("rewritten config should parse");
-        assert_eq!(reparsed.scoop, default_scoop());
-
-        let backup_contents =
-            fs::read_to_string(&backup).expect("backup config should be readable");
-        assert!(
-            backup_contents.contains("# injector config recovery reason:"),
-            "backup should contain the appended error reason"
-        );
-
-        fs::remove_file(&path).expect("test config should be cleaned up");
-        fs::remove_file(&backup).expect("backup config should be cleaned up");
-    }
-
-    #[test]
-    fn template_scope_matches_default_scope() {
-        let template = include_str!("../../template/injector.toml");
-        let parsed = parse_config(template).expect("template injector config should parse");
-        assert_eq!(parsed.scoop, default_scoop());
-    }
-
-    #[test]
-    fn replace_save_retry_only_retries_read_failures() {
-        let path = temp_config_path("replace-save-retry");
-        let mut attempts = 0usize;
-        let mut sleeps = Vec::new();
-
-        let loaded = load_with_read_race_retry(
-            &path,
-            LoadContext::Reload(WatchTrigger::ReplaceSave),
-            |_path| {
-                attempts += 1;
-                match attempts {
-                    1 => Err(LoadError::Io(io::Error::from(io::ErrorKind::NotFound))),
-                    2 => Err(LoadError::Io(io::Error::from(
-                        io::ErrorKind::PermissionDenied,
-                    ))),
-                    _ => Ok(InjectorConfig::default()),
-                }
-            },
-            |duration| sleeps.push(duration),
-        )
-        .expect("replace-save retry should eventually succeed");
-
-        assert_eq!(loaded.retries, 2);
-        assert_eq!(attempts, 3);
-        assert_eq!(sleeps.len(), 2);
-        assert!(sleeps
-            .iter()
-            .all(|duration| *duration == REPLACE_SAVE_RETRY_INTERVAL));
-
-        let path = temp_config_path("replace-save-parse");
-        let mut sleeps = Vec::new();
-
-        let error = load_with_read_race_retry(
-            &path,
-            LoadContext::Reload(WatchTrigger::ReplaceSave),
-            |_path| Err(LoadError::Parse("broken".to_string())),
-            |duration| sleeps.push(duration),
-        )
-        .expect_err("parse failures should bypass replace-save retries");
-
-        assert!(matches!(error, LoadError::Parse(_)));
-        assert!(sleeps.is_empty());
-    }
-}
+mod tests;

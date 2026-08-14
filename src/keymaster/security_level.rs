@@ -1214,7 +1214,7 @@ impl KeystoreSecurityLevel {
 
 fn caller_uid(ctx: Option<&CallerInfo>) -> AppUid {
     AppUid(
-        ctx.map(|ctx| ctx.callingUid)
+        ctx.map(|ctx| ctx.uid)
             .unwrap_or_else(|| CallingContext::default().uid.into()),
     )
 }
@@ -1542,6 +1542,9 @@ mod tests {
                 ResolvedTrust {
                     os_version: 16,
                     security_patch: "2025-06-05".to_string(),
+                    os_patchlevel: "2025-06-05".to_string(),
+                    vendor_patchlevel: "2025-06-05".to_string(),
+                    boot_patchlevel: "2025-06-05".to_string(),
                     vb_key: [0; 32],
                     vb_hash: [0; 32],
                     vb_key_source: TrustValueSource::ExplicitHex,
@@ -1577,9 +1580,9 @@ mod tests {
 
     fn untrusted_app() -> CallerInfo {
         CallerInfo {
-            callingUid: 10123,
-            callingSid: "u:r:untrusted_app:s0".to_string(),
-            callingPid: 1234,
+            uid: 10123,
+            sid: "u:r:untrusted_app:s0".to_string(),
+            pid: 1234,
         }
     }
 

@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use log::{error, info, warn};
+use log::{error, info, warn, LevelFilter};
 use nix::unistd::Pid;
 
 pub mod config;
@@ -13,7 +13,6 @@ pub mod ipc;
 pub mod legacy;
 pub mod logging;
 pub mod parcel;
-pub mod route;
 pub mod sys;
 pub mod tracker;
 pub mod utils;
@@ -32,7 +31,15 @@ fn log_runtime_identity(role: &str) {
 }
 
 fn main() {
-    logging::init_logger_fallback(config::get().main.log_level_filter());
+    logging::init_logger_fallback(LevelFilter::Debug);
+    let config = config::get();
+    if config::parse_level_filter(&config.main.log_level).is_none() {
+        warn!(
+            "injector logging unknown log level '{}', keeping debug fallback",
+            config.main.log_level
+        );
+    }
+    log::set_max_level(config.main.log_level_filter());
     log_runtime_identity("Launcher");
     match utils::current_exe_identity() {
         Ok(identity) => {
@@ -82,8 +89,8 @@ fn main() {
 pub extern "C" fn entry(handle: *const c_void) -> bool {
     // This runs inside the target process, so we must initialize logging again
     // for that process. On Android this enables both logcat and stdout logging.
+    logging::init_logger_fallback(LevelFilter::Debug);
     let config = config::get();
-    logging::init_logger_fallback(config.main.log_level_filter());
     if config::parse_level_filter(&config.main.log_level).is_none() {
         warn!(
             "injector logging unknown log level '{}', keeping debug fallback",
